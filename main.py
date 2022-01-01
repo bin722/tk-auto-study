@@ -3,9 +3,12 @@ import logging
 import json
 import os
 import importlib
+import time
 from functools import wraps
 
 import requests
+
+from exception.exceptions import KnownException
 
 crypt_name = "sm4"
 crypt_mode = "ecb"
@@ -34,8 +37,9 @@ def catch_exception(func):
     def catch(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception as e:
-            error_exit(f"发生未知异常(请截图日志发issue)：{e}")
+        except BaseException as e:
+            error_exit(f"请阅读异常提醒，如果无法解决请截图日志发issue)：{e}")
+
     return catch
 
 
@@ -45,9 +49,13 @@ def init_logger():
 
 
 def error_exit(msg: str):
-    logging.error(msg)
     send_msg(content=msg, success=False)
+    logging.exception(f"异常信息: {msg}")
     exit(-1)
+
+
+def error_raise(msg: str):
+    raise KnownException(msg)
 
 
 def get_validate_code() -> str:
@@ -64,9 +72,10 @@ def get_validate_code() -> str:
             logging.warning(f'获取验证码失败，原因:{e}')
             logging.warning(f'正在重试, 次数:{has_try}')
             has_try += 1
+            time.sleep(1)
 
     if has_try == max_try:
-        error_exit("验证码解析失败,请尝试更换方式或发issue寻求帮助")
+        error_raise("验证码解析失败,请尝试更换方式或发issue寻求帮助")
 
 
 def post_study_record():
@@ -74,14 +83,14 @@ def post_study_record():
     if resp.json().get('success'):
         logging.info("学习成功！")
     else:
-        error_exit("学习失败")
+        error_raise("学习失败")
 
 
 def post_login(username: str, pwd: str, validate_code, pub_key):
     post_dict = {
         'userName': encryptor.encrypt(username, pub_key),
         'pwd': encryptor.encrypt(pwd, pub_key),
-        'validateCode': encryptor.encrypt(validate_code, pub_key)
+        'validateCode': validate_code
     }
 
     resp = sess.post(url="https://m.fjcyl.com/mobileNologin",
@@ -89,7 +98,7 @@ def post_login(username: str, pwd: str, validate_code, pub_key):
 
     if resp.status_code == requests.codes.ok:
         if resp.json().get('success'):
-            logging.info('login ' + resp.json().get('errmsg'))
+            logging.info(username[-4:] + ' login ' + resp.json().get('errmsg'))
         else:
             raise ConnectionError(resp.json().get('errmsg'))
     else:
@@ -105,12 +114,15 @@ def get_profile_from_config():
         api_key = config_json.get('ocr').get('ak')
         secret_key = config_json.get('ocr').get('sk')
         ocr_type = config_json.get('ocr').get('type')
-        send_type = config_json.get('send').get('type')
-        send_key = config_json.get('send').get('key')
-        send_mode = config_json.get('send').get('mode')
+        send_config = config_json.get('send')
+        accounts = config_json.get("extUsers")
+        if send_config is not None:
+            send_type = send_config.get('type')
+            send_key = send_config.get('key')
+            send_mode = send_config.get('mode')
     return username, pwd, pub_key, \
            api_key, secret_key, ocr_type, \
-           send_type, send_key, send_mode
+           send_type, send_key, send_mode, accounts
 
 
 def get_profile_from_env():
@@ -123,15 +135,29 @@ def get_profile_from_env():
     send_type = os.environ['sendType']
     send_key = os.environ['sendKey']
     send_mode = os.environ['sendMode']
+    ext_users = os.environ['extUsers']
+    accounts = []
+    if ext_users is not None and ext_users.__len__() > 1:
+        for userLine in ext_users.split('\n'):
+            usr_split = userLine.split(" ")
+            account = {
+                "username": None,
+                "pwd": None
+            }
+            if len(usr_split) > 0:
+                account['username'] = usr_split[0]
+            if len(usr_split) > 1:
+                account['pwd'] = usr_split[1]
+            accounts.append(account)
     return username, pwd, pub_key, \
            api_key, secret_key, ocr_type, \
-           send_type, send_key, send_mode
+           send_type, send_key, send_mode, accounts
 
 
 def login(username, pwd, pub_key):
     max_try = 5
     has_try = 0
-
+    logging.info(f"正在登录尾号{username[-4:]}")
     while has_try < max_try:
         # get validate code
         code = get_validate_code()
@@ -140,22 +166,25 @@ def login(username, pwd, pub_key):
             post_login(username, pwd, code, pub_key)
             break
         except ConnectionError as e:
-            logging.error(f'登录失败，原因:{e}')
+            logging.error(f'尾号{username[-4:]}登录失败，原因:{e}')
             logging.info(f'尝试重新登录，重试次数{has_try}')
             has_try += 1
+            time.sleep(1)
 
     if has_try == max_try:
-        error_exit("重试登录失败，程序退出，截图日志发issue吧")
+        error_raise(f"尾号{username[-4:]}尝试登录失败")
 
 
 def init_ocr(ocr_type: str, ak: str, sk: str):
     global ocr_util
     if ocr_type is None or ocr_type == '':
         ocr_type = "baidu_image"
+
     try:
         ocr_util = importlib.import_module(f"ocr_module.{ocr_type}.{ocr_type}_ocr")
     except ModuleNotFoundError:
         error_exit("ocr类型不存在,请更换类型")
+
     if ocr_util.is_need_keys():
         ocr_util.set_keys(ak, sk)
     logging.info(f"使用 OCR {ocr_type}")
@@ -167,8 +196,12 @@ def init_sender(send_type, send_key, send_mode):
     if send_key is None or send_key == '':
         error_exit('缺少配置信息: send_key')
     else:
+        try:
+            send_util['sender'] = importlib.import_module(f"send_module.{send_type}.sender")
+        except ModuleNotFoundError:
+            error_exit("消息推送类型不存在，请更换类型")
+
         send_util['enable'] = True
-        send_util['sender'] = importlib.import_module(f"send_module.{send_type}.sender")
         send_util['sender'].set_key(send_key)
         if send_mode is not None and send_mode != "":
             send_util['mode'] = send_mode
@@ -189,30 +222,64 @@ def send_msg(content, success=True):
             logging.info(f"消息推送成功")
 
 
-@catch_exception
-def run(use_config: bool):
-    logging.info("自动学习开始")
-    # get default config
-    username, pwd, pub_key, \
-    api_key, secret_key, ocr_type, \
-    send_type, send_key, send_mode = get_profile_from_config() if use_config else get_profile_from_env()
-    # init ocr module
-    init_ocr(ocr_type, api_key, secret_key)
-    # init sender
-    init_sender(send_type, send_key, send_mode)
+def multi_study(accounts, pub_key):
+    logging.info(f"开始多人打卡，人数{len(accounts)}")
+    push_msg = ""
+    all_success = True
+    for account in accounts:
+        if account['username'] is None or account['pwd'] is None:
+            logging.warning("多人打卡配置存在错误,将跳过部分用户,请检查配置的用户名密码格式")
+            continue
+
+        try:
+            login(account['username'], account['pwd'], pub_key)
+            post_study_record()
+            push_msg += f"尾号{account['username'][-4:]}打卡成功\n"
+        except KnownException as e:
+            push_msg += f"尾号{account['username'][-4:]}失败:{e}\n"
+            all_success = False
+    push_msg += "全部打卡成功" if all_success else "部分打卡失败"
+    send_msg(push_msg, all_success)
+
+
+def single_study(username, password, pub_key):
+    logging.info("开始单人打卡")
     # do login
-    login(username, pwd, pub_key)
+    login(username, password, pub_key)
     # do study
     post_study_record()
     # send success message
     send_msg("打卡成功")
 
 
+@catch_exception
+def run(use_config: bool):
+    logging.info("自动学习开始")
+    # get default config
+    username, pwd, pub_key, \
+    api_key, secret_key, ocr_type, \
+    send_type, send_key, send_mode, \
+    accounts = get_profile_from_config() if use_config else get_profile_from_env()
+    # init ocr module
+    init_ocr(ocr_type, api_key, secret_key)
+    # init sender
+    init_sender(send_type, send_key, send_mode)
+    # study proc
+    if accounts is not None and len(accounts) > 0:
+        if pwd is not None and username is not None and pwd != "" and username != "":
+            accounts.append({"username": username, "pwd": pwd})
+        multi_study(accounts, pub_key)
+    else:
+        single_study(username, pwd, pub_key)
+
+
 def start_with_workflow():
     init_logger()
+    logging.info("你正在使用GitHubAction,请确保secret已经配置")
     run(False)
 
 
 if __name__ == '__main__':
     init_logger()
+    logging.info("你正在使用本地服务,请确保填写了配置文件")
     run(True)
