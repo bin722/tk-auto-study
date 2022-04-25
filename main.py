@@ -283,7 +283,7 @@ def init_proxy():
         sess.proxies = {'https': f"http://{ip}"}
         try:
             logging.info(f"正在测试 http://{ip}")
-            sess.get("https://m.fjcyl.com", timeout=10)
+            sess.get("https://m.fjcyl.com", timeout=15)
 
             logging.info(f"测试成功，使用{ip}代理请求")
             return
@@ -296,6 +296,12 @@ def start_with_docker():
     logging.info("你正在使用docker运行,请确保环境变量存在")
     run(False, False)
 
+def start_with_docker():
+    init_logger()
+    logging.info("你正在使用docker运行,请确保环境变量存在")
+    run(False, False)
+
+
 def start_with_workflow():
     init_logger()
     logging.info("你正在使用GitHubAction,请确保secret已经配置")
@@ -305,4 +311,4 @@ def start_with_workflow():
 if __name__ == '__main__':
     init_logger()
     logging.info("你正在使用本地服务,请确保填写了配置文件")
-    run(True)
+    run(True, True)
