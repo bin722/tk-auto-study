@@ -1,18 +1,16 @@
 # 青年大学习/团课自动打卡
 
-![](https://github.com/838239178/tk-auto-study/workflows/auto-study/badge.svg) ![](https://img.shields.io/github/stars/838239178/tk-auto-study) ![](https://img.shields.io/github/forks/838239178/tk-auto-study) ![](https://img.shields.io/badge/Python-3.9-green.svg)
+![](https://github.com/838239178/tk-auto-study/workflows/auto-study/badge.svg) ![](https://img.shields.io/github/stars/838239178/tk-auto-study) ![](https://img.shields.io/github/forks/838239178/tk-auto-study) ![](https://img.shields.io/badge/Python-3.7-green.svg)
 
 [此处展示最近更新日志，完整日志搓这里](./doc/Log.md)
 
-> **2022.03.06**: :warning: **[重要更新]** 新学期新气象，GithubAction已经可用使用了！！新增Bark消息推送模式（beta) 
->
-> 2022.03.11: 经用户反馈，去除了OCR功能模块，现在不需要申请OCR账号，添加了更多代理源 改善代理异常的处理 提高可用性
->
 > 2022.03.26: 感谢 @miscdec 对开源库的贡献，现在添加了push_plus推送渠道，并修复了一些异常。
 >
 > 2022.03.27: 代理池极不稳定
 >
 > 2022.03.30: 感谢 @Dark-Existed 贡献了Docker部署脚本，请使用环境变量配置相关参数
+>
+> 2022.05.11: 不使用代理IP的场景可使用Python3.7版本
 
 🤺妈妈再也不用担心我团课没看被团支书赶着催了
 
@@ -36,9 +34,10 @@ A7E74D2B6282AEB1C5EA3C28D25660A7
 
 #### 部署在平台上定时执行
 
-可以是服务器，本地，和GitHubActions，这里只介绍如何在GitHubActions中运行，其他运行方式请参考main.py中的注释
+这里介绍如何在GitHubActions中运行，因代理IP的相关代码，需确保**Python3.9**及以上版本。
 
 - fork该项目到你的库中
+
 - 添加三个secrets，分别为：username,  pwd,  pub_key
 
 - 将[该文件](./.github/workflows/run.yml)中的`#`删除并修改cron为你想要触发的时间，默认是每周三14点运行一次，cron如何写请自行百度
@@ -52,6 +51,8 @@ A7E74D2B6282AEB1C5EA3C28D25660A7
 > `1.2.8` 版本以上可以使用Docker脚本运行，使用环境变量配置参数（格式同Actions)，可能无法配置多人打卡，可以尝试使用`\n`换行符（未测试）
 
 ### 如何在服务器上部署
+
+在本地或者国内服务器上部署不需要代理，可兼容**Python3.7**版本
 
 #### crontab
 
